@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>systeam — neon clock</title>
+  <meta name="description" content="Hacker-style neon clock for codesysteam — large digital clock, UTC/local toggle, animated seconds." />
+  <meta name="theme-color" content="#07120f" />
+  <style>
+    :root{--bg:#04110b;--neon:#00ff88;--accent:#39ffca;--muted:#6aa988;--mono:ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', monospace}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:radial-gradient(800px 400px at 10% 10%, rgba(0,255,140,0.03), transparent 20%), linear-gradient(180deg,var(--bg),#02110a);font-family:var(--mono);color:var(--neon);-webkit-font-smoothing:antialiased}
+    canvas#matrix{position:fixed;inset:0;z-index:0;mix-blend-mode:screen;opacity:0.12}
+    .wrap{position:relative;z-index:2;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+
+    .clock-card{width:980px;max-width:96%;border-radius:14px;padding:28px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border:1px solid rgba(0,255,140,0.04);box-shadow:0 30px 80px rgba(0,0,0,0.6);display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:center}
+    @media(max-width:900px){ .clock-card{grid-template-columns:1fr;gap:12px;padding:18px} }
+
+    .display{display:flex;flex-direction:column;gap:12px}
+    .bigtime{font-size:86px;letter-spacing:6px;font-weight:700;color:var(--neon);text-shadow:0 6px 30px rgba(0,255,140,0.12), 0 0 18px rgba(0,255,140,0.06)}
+    .bigdate{font-size:18px;color:var(--muted)}
+
+    .visual{display:flex;gap:12px;align-items:center}
+    .analog{width:220px;height:220px;border-radius:50%;background:conic-gradient(rgba(0,255,140,0.02), transparent);display:grid;place-items:center;position:relative;box-shadow:inset 0 0 60px rgba(0,255,140,0.02)}
+    .dial{width:76%;height:76%;border-radius:50%;background:linear-gradient(180deg,#00120a,#011915);display:grid;place-items:center;position:relative;border:1px solid rgba(0,255,140,0.04)}
+    .hand{position:absolute;left:50%;top:50%;transform-origin:center bottom;transform:translate(-50%,-100%) rotate(0deg);}
+    .hand.hour{height:44px;width:6px;border-radius:4px;background:linear-gradient(180deg,var(--neon),#7fffb6)}
+    .hand.min{height:62px;width:4px;border-radius:4px;background:linear-gradient(180deg,var(--neon),#5fffa0)}
+    .hand.sec{height:86px;width:2px;border-radius:2px;background:linear-gradient(180deg,#ff6b6b,var(--neon));}
+    .center-dot{width:12px;height:12px;border-radius:50%;background:var(--neon);box-shadow:0 0 14px rgba(0,255,140,0.2)}
+
+    .side-panel{padding:10px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent);border:1px solid rgba(0,255,140,0.02)}
+    .tz-list{display:flex;flex-direction:column;gap:8px}
+    .tz-item{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;border:1px dashed rgba(0,255,140,0.03);cursor:pointer}
+    .tz-item:hover{background:rgba(0,255,140,0.02)}
+    .controls{display:flex;gap:8px;margin-top:12px}
+    .btn{background:transparent;border:1px solid rgba(0,255,140,0.06);padding:8px 10px;border-radius:8px;color:var(--neon);cursor:pointer}
+    .btn.primary{background:linear-gradient(90deg,var(--neon),var(--accent));color:#001}
+
+    .footer{margin-top:14px;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <canvas id="matrix"></canvas>
+  <div class="wrap">
+    <div class="clock-card" role="main" aria-label="systeam neon clock">
+      <div class="display">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:14px;color:var(--muted);letter-spacing:1px">systeam</div>
+            <div style="font-weight:700;color:var(--neon);font-size:22px">Neon Clock</div>
+          </div>
+          <div id="tz-label" class="bigdate">Local time</div>
+        </div>
+
+        <div class="bigtime" id="digital">--:--:--</div>
+        <div class="bigdate" id="longdate">—</div>
+
+        <div class="visual">
+          <div class="analog" aria-hidden="true">
+            <div class="dial">
+              <div class="hand hour" id="hour-hand"></div>
+              <div class="hand min" id="min-hand"></div>
+              <div class="hand sec" id="sec-hand"></div>
+              <div class="center-dot"></div>
+            </div>
+          </div>
+          <div style="flex:1">
+            <div style="color:var(--muted);margin-bottom:8px">Quick zones (click to set)</div>
+            <div class="tz-list" id="tz-list"></div>
+            <div class="controls">
+              <button id="btn-utc" class="btn">UTC</button>
+              <button id="btn-local" class="btn">Local</button>
+              <button id="download-tz" class="btn primary">Export Time</button>
+            </div>
+            <div class="footer">Click the dots to copy timezone. Small, fast, neon.</div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="side-panel">
+        <div style="font-weight:700;color:var(--neon);margin-bottom:8px">Timezone Monitor</div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Shows several common zones and copies to clipboard on click.</div>
+        <div id="zones" style="display:flex;flex-direction:column;gap:8px"></div>
+      </aside>
+    </div>
+  </div>
+
+  <script>
+    // matrix background
+    (function(){ const canvas=document.getElementById('matrix'), ctx=canvas.getContext('2d'); let w,h; function resize(){ w=canvas.width=innerWidth; h=canvas.height=innerHeight; } addEventListener('resize', resize); resize(); const cols = Math.floor(w/14)+2; const drops = Array.from({length:cols}, ()=>Math.random()*h/14); const chars='01<>[]{}@#$%&*+-=abcdefghijklmnopqrstuvwxyz'; function draw(){ ctx.fillStyle='rgba(0,0,0,0.06)'; ctx.fillRect(0,0,w,h); ctx.fillStyle='rgba(0,255,140,0.08)'; ctx.font='13px monospace'; for(let i=0;i<cols;i++){ const ch=chars.charAt(Math.floor(Math.random()*chars.length)); const x=i*14; const y=drops[i]*14; ctx.fillText(ch,x,y); drops[i]+=Math.random()*0.8+0.3; if(drops[i]*14>h && Math.random()>0.98) drops[i]=0; } } (function loop(){ draw(); requestAnimationFrame(loop); })(); })();
+
+    // clock logic
+    const digital = document.getElementById('digital'); const longdate = document.getElementById('longdate'); const tzLabel = document.getElementById('tz-label');
+    const hourHand = document.getElementById('hour-hand'); const minHand = document.getElementById('min-hand'); const secHand = document.getElementById('sec-hand');
+
+    const zones = [
+      {id:'Local', tz:Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'},
+      {id:'UTC', tz:'UTC'},
+      {id:'London', tz:'Europe/London'},
+      {id:'Berlin', tz:'Europe/Berlin'},
+      {id:'New York', tz:'America/New_York'},
+      {id:'Beijing', tz:'Asia/Shanghai'},
+      {id:'Tokyo', tz:'Asia/Tokyo'},
+      {id:'Sydney', tz:'Australia/Sydney'}
+    ];
+
+    let currentTZ = zones[0].tz;
+
+    function fmt(tz){ try{ return new Intl.DateTimeFormat(undefined,{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:tz}).format(new Date()); }catch(e){ return '--:--:--'; } }
+    function fmtLong(tz){ try{ return new Intl.DateTimeFormat(undefined,{weekday:'short',year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',timeZone:tz}).format(new Date()); }catch(e){ return ''; } }
+
+    function update(){ const now = new Date(); const display = new Date().toLocaleTimeString('en-GB',{hour12:false}); digital.textContent = fmt(currentTZ); longdate.textContent = fmtLong(currentTZ); tzLabel.textContent = currentTZ;
+      // analog hands based on currentTZ time
+      const parts = new Intl.DateTimeFormat('en-GB', {hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false,timeZone:currentTZ}).formatToParts(new Date());
+      const hh = Number(parts.find(p=>p.type==='hour').value);
+      const mm = Number(parts.find(p=>p.type==='minute').value);
+      const ss = Number(parts.find(p=>p.type==='second').value);
+      const hourDeg = (hh % 12) * 30 + (mm/60)*30; const minDeg = mm*6 + (ss/60)*6; const secDeg = ss*6;
+      hourHand.style.transform = `translate(-50%,-100%) rotate(${hourDeg}deg)`; minHand.style.transform = `translate(-50%,-100%) rotate(${minDeg}deg)`; secHand.style.transform = `translate(-50%,-100%) rotate(${secDeg}deg)`;
+    }
+
+    // build tz list and side zones
+    const tzList = document.getElementById('tz-list'); const zonesPanel = document.getElementById('zones');
+    zones.forEach(z=>{
+      const el = document.createElement('div'); el.className='tz-item'; el.innerHTML = `<div style="font-weight:700">${z.id}</div><div class="muted">${z.tz}</div>`; el.addEventListener('click', ()=>{ currentTZ = z.tz; update(); flash('Timezone set: '+z.tz); }); tzList.appendChild(el);
+      const s = document.createElement('div'); s.className='tz-item'; s.style.justifyContent='space-between'; s.innerHTML = `<div>${z.id}</div><div id="z-${z.id}">${fmt(z.tz)}</div>`; s.addEventListener('click', async ()=>{ await navigator.clipboard?.writeText(z.tz).catch(()=>{}); flash('Copied: '+z.tz); }); zonesPanel.appendChild(s);
+    });
+
+    document.getElementById('btn-utc').addEventListener('click', ()=>{ currentTZ='UTC'; update(); flash('UTC selected'); });
+    document.getElementById('btn-local').addEventListener('click', ()=>{ currentTZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; update(); flash('Local selected'); });
+    document.getElementById('download-tz').addEventListener('click', ()=>{ const txt = `Time (${currentTZ})
+${fmtLong(currentTZ)}
+`; const blob = new Blob([txt], {type:'text/plain'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download = `time_${currentTZ.replace(/[^a-z0-9_\-]/ig,'_')}.txt`; document.body.appendChild(a); a.click(); a.remove(); });
+
+    function refreshSideZones(){ zones.forEach(z=>{ const el = document.getElementById('z-'+z.id); if(el) el.textContent = fmt(z.tz); }); }
+
+    function flash(msg){ const el=document.createElement('div'); el.textContent=msg; el.style.position='fixed'; el.style.right='18px'; el.style.top='18px'; el.style.background='rgba(0,0,0,0.6)'; el.style.color='var(--neon)'; el.style.padding='10px 14px'; el.style.borderRadius='8px'; el.style.zIndex=9999; document.body.appendChild(el); setTimeout(()=>el.remove(),1400); }
+
+    // update loop
+    update(); refreshSideZones(); setInterval(()=>{ update(); refreshSideZones(); }, 1000);
+  </script>
+</body>
+</html>
